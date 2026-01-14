@@ -17,5 +17,95 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:8.4-alpine
+    container_name: analytics_redis
+    networks:
+      - analytics_net
+
+  generator:
+    build: ./generator
+    container_name: weather_generator
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_NAME: analytics_db
+      DB_USER: postgres
+      DB_PASS: postgres
+    networks:
+      - analytics_net
+
+  redash:
+    image: redash/redash:25.8.0
+    container_name: redash_server
+    command: server
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "5001:5000"
+    environment:
+      PYTHONUNBUFFERED: 0
+      REDASH_LOG_LEVEL: "INFO"
+      REDASH_REDIS_URL: "redis://redis:6379/0"
+      REDASH_DATABASE_URL: "postgresql://postgres:postgres@db/analytics_db"
+      REDASH_COOKIE_SECRET: "secret"
+      REDASH_SECRET_KEY: "secret"
+      REDASH_WEB_WORKERS: 4
+    networks:
+      - analytics_net
+
+  redash-scheduler:
+    image: redash/redash:25.8.0
+    container_name: redash_scheduler
+    command: scheduler
+    depends_on:
+      - redash
+    environment:
+      PYTHONUNBUFFERED: 0
+      REDASH_REDIS_URL: "redis://redis:6379/0"
+      REDASH_DATABASE_URL: "postgresql://postgres:postgres@db/analytics_db"
+      QUEUES: "celery"
+      WORKERS_COUNT: 1
+      REDASH_COOKIE_SECRET: "secret"
+      REDASH_SECRET_KEY: "secret"
+    networks:
+      - analytics_net
+
+  redash-worker:
+    image: redash/redash:25.8.0
+    container_name: redash_worker
+    command: worker
+    depends_on:
+      - redash
+    environment:
+      PYTHONUNBUFFERED: 0
+      REDASH_REDIS_URL: "redis://redis:6379/0"
+      REDASH_DATABASE_URL: "postgresql://postgres:postgres@db/analytics_db"
+      QUEUES: "default,scheduled_queries,queries,periodic,schemas,emails,default"
+      WORKERS_COUNT: 1
+      REDASH_COOKIE_SECRET: "secret"
+      REDASH_SECRET_KEY: "secret"
+    networks:
+      - analytics_net
+
+  jupyter:
+    image: jupyter/scipy-notebook:latest
+    container_name: analytics_jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+    environment:
+      JUPYTER_TOKEN: "analyze"
+    networks:
+      - analytics_net
+
+networks:
+  analytics_net:
+    driver: bridge
+
 volumes:
   postgres_data:
