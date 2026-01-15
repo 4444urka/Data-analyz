@@ -51,7 +51,7 @@ def main():
             conn.commit()
             print(f"Inserted data at {timestamp}: {data}")
             
-            time.sleep(2) # Generate data every 2 seconds
+            time.sleep(2)
     except KeyboardInterrupt:
         print("Stopping generator...")
     finally:
